@@ -22,9 +22,6 @@ class Settings(BaseSettings):
     # ── CORS ────────────────────────────────────────────────
     ALLOWED_ORIGINS: list[str] = ["*"]
 
-    # ── Cron ────────────────────────────────────────────────
-    CRON_ENABLED: bool = True
-
     # ── GitHub Webhook ──────────────────────────────────────
     GITHUB_WEBHOOK_SECRET: str = ""
     GITHUB_REPO: Optional[str] = None            # Format: "owner/repo"
