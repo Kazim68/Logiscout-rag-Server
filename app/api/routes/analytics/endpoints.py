@@ -16,17 +16,15 @@ router = APIRouter(prefix="/analytics")
 @router.get("/github-commits", summary="Get GitHub commits timeline")
 async def get_github_commits():
     """
-    Return the latest 5 GitHub commits stored in the database.
-    This timeline is automatically synced via cron job every 5 minutes.
+    Return the latest 5 GitHub commits received via webhook (in-memory).
     """
     commits = await get_timeline()
     count = await get_commit_count()
-    
+
     return {
         "total": count,
         "max_commits": 5,
         "commits": commits,
-        "note": "Timeline syncs every 5 minutes via cron job"
     }
 
 

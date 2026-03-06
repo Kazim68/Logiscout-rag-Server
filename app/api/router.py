@@ -4,15 +4,11 @@ Central API router – aggregates all route modules.
 from fastapi import APIRouter
 
 from app.core.settings import settings
-from app.api.routes.health.endpoints import router as health_router
 from app.api.routes.ingestion.endpoints import router as ingestion_router
 from app.api.routes.webhook.endpoints import router as webhook_router
 from app.api.routes.analytics.endpoints import router as analytics_router
 
 api_router = APIRouter()
-
-# Health – no prefix, always accessible
-api_router.include_router(health_router, tags=["health"])
 
 # Versioned routes
 v1 = settings.API_V1_PREFIX
