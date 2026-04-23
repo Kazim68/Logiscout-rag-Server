@@ -23,6 +23,7 @@ async def github_webhook(
     """
     # Read raw body (required for signature verification)
     body = await request.body()
+    logger.info("incoming request body: %s", body)
 
     if not x_hub_signature_256:
         logger.warning("Webhook request missing X-Hub-Signature-256 header")
@@ -33,52 +34,54 @@ async def github_webhook(
 
     # Verify GitHub webhook signature
     try:
-        if not verify_github_signature(body, x_hub_signature_256):
-            logger.error("Invalid webhook signature received")
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid signature"
-            )
+        is_valid = verify_github_signature(body, x_hub_signature_256)
     except RuntimeError as e:
-        logger.error(f"Signature verification config error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
+        logger.error("Signature verification config error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.error(f"Signature verification error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Signature verification failed"
-        )
+        logger.error("Signature verification error: %s", e)
+        raise HTTPException(status_code=500, detail="Signature verification failed")
+
+    if not is_valid:
+        logger.error("Invalid webhook signature received")
+        raise HTTPException(status_code=401, detail="Invalid signature")
 
     # Parse JSON after verification
     try:
         payload = await request.json()
         event = request.headers.get("X-GitHub-Event", "unknown")
-        logger.info(f"GitHub webhook event={event}, ref={payload.get('ref', 'unknown')}")
+        logger.info("GitHub webhook event=%s, ref=%s", event, payload.get("ref", "unknown"))
+
+        # Handle ping event (sent when webhook is first created)
+        if event == "ping":
+            logger.info("Received GitHub ping event — webhook is configured correctly")
+            return {
+                "status": "pong",
+                "event": event,
+                "zen": payload.get("zen", ""),
+            }
 
         # Process push events
         if event == "push" and payload.get("commits"):
             await process_push_event(payload)
-            logger.info(f"Processed {len(payload['commits'])} commit(s)")
+            logger.info("Processed %d commit(s)", len(payload["commits"]))
             return {
                 "status": "processed",
                 "event": event,
-                "commits": len(payload["commits"])
-            }
-        else:
-            logger.info(f"Webhook received but no commits to process (event={event})")
-            return {
-                "status": "received",
-                "event": event,
-                "message": "No commits to process"
+                "commits": len(payload["commits"]),
             }
 
+        logger.info("Webhook received but no commits to process (event=%s)", event)
+        return {
+            "status": "received",
+            "event": event,
+            "message": "No commits to process",
+        }
+
     except Exception as e:
-        logger.error(f"Error processing webhook: {str(e)}", exc_info=True)
+        logger.error("Error processing webhook: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error processing webhook: {str(e)}"
+            detail=f"Error processing webhook: {e}",
         )
 

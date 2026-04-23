@@ -11,10 +11,33 @@ from fastapi.exceptions import RequestValidationError
 from app.core.settings import settings
 import logging
 from app.core.logging_config import setup_logging
-from app.db.mongodb.database import init_db, close_db
 from app.api.router import api_router
+from app.services.github_webhook_service.state import (
+    COMMITS_FILE_PATH,
+    RAW_PAYLOADS_FILE_PATH,
+    ACTIVITY_LOG_PATH,
+)
+from app.services.github_webhook_service.github_api import fetch_and_populate_commits
 
 logger = logging.getLogger(__name__)
+
+
+def _init_logs() -> None:
+    """Create the logs/ directory and seed JSON files on first run."""
+    COMMITS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    for path in (COMMITS_FILE_PATH, RAW_PAYLOADS_FILE_PATH):
+        if not path.exists():
+            path.write_text("[]", encoding="utf-8")
+            logger.info("Created log file: %s", path)
+        else:
+            logger.info("Log file ready: %s", path)
+
+    if not ACTIVITY_LOG_PATH.exists():
+        ACTIVITY_LOG_PATH.write_text("", encoding="utf-8")
+        logger.info("Created log file: %s", ACTIVITY_LOG_PATH)
+    else:
+        logger.info("Log file ready: %s", ACTIVITY_LOG_PATH)
 
 
 # ── Lifespan ──────────────────────────────────────────────────
@@ -23,16 +46,10 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle hooks."""
     setup_logging()
     logger.info("Starting LogiScout server …")
-    
-    # Initialize MongoDB
-    await init_db()
-    logger.info("MongoDB connected")
-
+    _init_logs()
+    await fetch_and_populate_commits()
     yield
-
-    # Shutdown
     logger.info("Shutting down …")
-    await close_db()
 
 
 # ── App factory ───────────────────────────────────────────────

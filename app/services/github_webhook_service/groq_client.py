@@ -1,7 +1,6 @@
 """Groq LLM client for commit diff summarization."""
 
-import requests
-from typing import Optional
+import httpx
 
 from app.core.settings import settings
 import logging
@@ -17,13 +16,13 @@ LLM_MAX_TOKENS: int = 300
 REQUEST_TIMEOUT: int = 20
 
 
-def summarize_diff(diff_text: str) -> str:
+async def summarize_diff(diff_text: str) -> str:
     """
     Generate an LLM-powered summary of a Git commit diff.
-    
+
     Args:
         diff_text: The raw Git diff text
-    
+
     Returns:
         Summary text or error message
     """
@@ -55,19 +54,19 @@ def summarize_diff(diff_text: str) -> str:
     }
 
     try:
-        response = requests.post(
-            GROQ_API_URL,
-            headers=headers,
-            json=payload,
-            timeout=REQUEST_TIMEOUT
-        )
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            response = await client.post(
+                GROQ_API_URL,
+                headers=headers,
+                json=payload,
+            )
 
         if response.status_code != 200:
-            logger.error(f"Groq API error {response.status_code}: {response.text}")
+            logger.error("Groq API error %d: %s", response.status_code, response.text)
             return f"LLM API error: {response.status_code}"
 
         return response.json()["choices"][0]["message"]["content"]
 
     except Exception as e:
-        logger.error(f"Groq API exception: {str(e)}")
-        return f"LLM summarization failed: {str(e)}"
+        logger.error("Groq API exception: %s", e)
+        return f"LLM summarization failed: {e}"

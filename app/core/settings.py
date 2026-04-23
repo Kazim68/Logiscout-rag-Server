@@ -15,10 +15,6 @@ class Settings(BaseSettings):
     # ── API ──────────────────────────────────────────────────
     API_V1_PREFIX: str = "/api/v1"
 
-    # ── MongoDB (processed-logs store) ───────────────────────
-    MONGODB_URL: str = "mongodb://localhost:27017"
-    MONGODB_DB_NAME: str = "logiscout"
-
     # ── CORS ────────────────────────────────────────────────
     ALLOWED_ORIGINS: list[str] = ["*"]
 
@@ -33,6 +29,16 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+
+    @classmethod
+    def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings):
+        """Make .env file override OS environment variables."""
+        return (
+            init_settings,
+            dotenv_settings,    # .env takes priority
+            env_settings,       # OS env is fallback
+            file_secret_settings,
+        )
 
 
 settings = Settings()

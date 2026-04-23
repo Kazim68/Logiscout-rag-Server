@@ -5,7 +5,7 @@ Data is held in-memory; no DB read required.
 import logging
 from fastapi import APIRouter
 
-from app.services.github_webhook_service.state import get_timeline, get_commit_count
+from app.services.github_webhook_service.state import get_timeline, get_commit_count, get_raw_payloads
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,11 @@ async def get_commit_timeline():
     """
     commits = await get_timeline()
     count = await get_commit_count()
+    raw = await get_raw_payloads()
 
     return {
         "total": count,
         "max_commits": 5,
         "commits": commits,
+        "raw_payloads": raw,
     }
