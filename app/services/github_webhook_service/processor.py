@@ -15,16 +15,17 @@ GITHUB_DIFF_TIMEOUT: int = 15
 USER_AGENT: str = "LogiScout-Webhook-Agent"
 
 
-async def process_push_event(payload: Dict) -> None:
+async def process_push_event(payload: Dict, project_id: str = "default") -> None:
     """
     Process GitHub push event and extract commit information.
 
     Args:
         payload: GitHub webhook payload
+        project_id: LogiScout project ID for scoped storage
     """
     try:
         # Persist original commit payload before any Groq-based processing.
-        await add_raw_payload(payload)
+        await add_raw_payload(payload, project_id=project_id)
 
         repo = payload["repository"]["full_name"]
 
@@ -70,6 +71,7 @@ async def process_push_event(payload: Dict) -> None:
                 summary = f"Error fetching diff: {e}"
 
             entry = {
+                "project_id": project_id,
                 "source": "github_webhook",
                 "repo": repo,
                 "commit": commit_id[:7],
@@ -82,7 +84,7 @@ async def process_push_event(payload: Dict) -> None:
                 "summary": summary,
             }
 
-            await add_commit(entry)
+            await add_commit(entry, project_id=project_id)
 
         logger.info("Successfully processed %d commit(s)", len(payload["commits"]))
 

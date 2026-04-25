@@ -12,14 +12,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook")
 
 
-@router.post("/github", status_code=status.HTTP_200_OK, summary="GitHub webhook receiver")
+@router.post("/{project_id}/github", status_code=status.HTTP_200_OK, summary="GitHub webhook receiver")
 async def github_webhook(
     request: Request,
+    project_id: str,
     x_hub_signature_256: str = Header(None, alias="X-Hub-Signature-256")
 ):
     """
     Receive GitHub webhook events with signature verification.
-    Processes push events and stores them in MongoDB.
+    Processes push events and stores them scoped to the given project.
     """
     # Read raw body (required for signature verification)
     body = await request.body()
@@ -54,27 +55,30 @@ async def github_webhook(
 
         # Handle ping event (sent when webhook is first created)
         if event == "ping":
-            logger.info("Received GitHub ping event — webhook is configured correctly")
+            logger.info("Received GitHub ping event for project %s — webhook is configured correctly", project_id)
             return {
                 "status": "pong",
                 "event": event,
+                "project_id": project_id,
                 "zen": payload.get("zen", ""),
             }
 
         # Process push events
         if event == "push" and payload.get("commits"):
-            await process_push_event(payload)
-            logger.info("Processed %d commit(s)", len(payload["commits"]))
+            await process_push_event(payload, project_id=project_id)
+            logger.info("Processed %d commit(s) for project %s", len(payload["commits"]), project_id)
             return {
                 "status": "processed",
                 "event": event,
+                "project_id": project_id,
                 "commits": len(payload["commits"]),
             }
 
-        logger.info("Webhook received but no commits to process (event=%s)", event)
+        logger.info("Webhook received but no commits to process (event=%s, project=%s)", event, project_id)
         return {
             "status": "received",
             "event": event,
+            "project_id": project_id,
             "message": "No commits to process",
         }
 
