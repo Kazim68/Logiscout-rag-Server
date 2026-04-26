@@ -89,7 +89,6 @@ class CommitPipelineConfig:
     """Pipeline configuration settings."""
 
     # ── GitHub API ────────────────────────────────────────────────────
-    github_token: str = field(default_factory=lambda: os.getenv("GITHUB_TOKEN", ""))
     github_api_base: str = field(default_factory=lambda: os.getenv("GITHUB_API_BASE", "https://api.github.com"))
     github_webhook_secret: str = field(default_factory=lambda: os.getenv("GITHUB_WEBHOOK_SECRET", ""))
 
@@ -134,7 +133,6 @@ class CommitPipelineConfig:
     def from_env(cls) -> "CommitPipelineConfig":
         """Create config from environment variables."""
         return cls(
-            github_token=os.getenv("GITHUB_TOKEN", ""),
             github_api_base=os.getenv("GITHUB_API_BASE", "https://api.github.com"),
             github_webhook_secret=os.getenv("GITHUB_WEBHOOK_SECRET", ""),
             qdrant_url=os.getenv("QDRANT_URL", "http://localhost:6333"),

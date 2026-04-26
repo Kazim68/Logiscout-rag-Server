@@ -44,7 +44,6 @@ class GitHubFetcherService:
         # ── Fetch structured data from API ────────────────────────────
         api_url = f"{self.config.github_api_base}/repos/{repo}/commits/{sha}"
         headers = {
-            "Authorization": f"Bearer {self.config.github_token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }
