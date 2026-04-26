@@ -17,7 +17,6 @@ from app.services.github_webhook_service.state import (
     RAW_PAYLOADS_FILE_PATH,
     ACTIVITY_LOG_PATH,
 )
-from app.services.github_webhook_service.github_api import fetch_and_populate_commits
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,6 @@ async def lifespan(app: FastAPI):
     setup_logging()
     logger.info("Starting LogiScout server …")
     _init_logs()
-    await fetch_and_populate_commits()
     yield
     logger.info("Shutting down …")
 

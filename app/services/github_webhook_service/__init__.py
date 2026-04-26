@@ -1,0 +1,1 @@
+"""LogiScout Commit Ingestion Pipeline."""

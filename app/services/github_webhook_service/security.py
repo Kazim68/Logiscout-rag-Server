@@ -2,7 +2,6 @@
 
 import hmac
 import hashlib
-from typing import Optional
 
 from app.core.settings import settings
 import logging
