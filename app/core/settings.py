@@ -1,11 +1,17 @@
 """
 All environment & server configuration for LogiScout.
 """
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
     # ── Application ──────────────────────────────────────────
     APP_NAME: str = "LogiScout"
     APP_VERSION: str = "0.1.0"
@@ -25,10 +31,19 @@ class Settings(BaseSettings):
 
     # ── LLM / Groq ──────────────────────────────────────────
     GROQ_API_KEY: Optional[str] = None
+    GROQ_INTENT_MODEL: str = "llama-3.3-70b-versatile"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    # ── LLM / Gemini ────────────────────────────────────────
+    GEMINI_KEY: Optional[str] = None
+
+    # ── Qdrant (Vector DB) ──────────────────────────────────
+    QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_API_KEY: Optional[str] = None
+    QDRANT_COMMITS_COLLECTION_SUFFIX: str = "_commits"
+
+    # ── Response Pipeline ───────────────────────────────────
+    RESPONSE_TOP_K: int = 5
+    RESPONSE_SCORE_THRESHOLD: float = 0.0
 
     @classmethod
     def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings):
