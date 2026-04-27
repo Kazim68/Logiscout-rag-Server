@@ -49,6 +49,9 @@ async def generate_response(payload: ResponseRequest):
     Each chunk is a newline-delimited JSON object of the form:
         {"event": "<status|intent|answer|error|done>", "data": {...}}
 
+    The `answer` event includes retrieval context keys:
+        log_context, commit_context, postmartems_context
+
     A terminal `done` event is always emitted by the pipeline.
     """
     logger.info(

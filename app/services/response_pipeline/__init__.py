@@ -2,5 +2,6 @@
 
 from .config import ResponsePipelineConfig
 from .pipeline import ResponsePipeline
+from .retrieval_service import RetrievalService
 
-__all__ = ["ResponsePipelineConfig", "ResponsePipeline"]
+__all__ = ["ResponsePipelineConfig", "ResponsePipeline", "RetrievalService"]

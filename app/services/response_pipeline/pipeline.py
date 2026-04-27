@@ -18,10 +18,11 @@ Usage:
 
 import json
 import logging
-from typing import Any, AsyncIterator, Dict, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from .config import ResponsePipelineConfig
 from .pipeline_steps import IntentDetector, LLMClient
+from .retrieval_service import RetrievalService
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,10 @@ class ResponsePipeline:
         # Shared LLM client so the Gemini module is initialized once.
         self._llm_client = LLMClient(self.config)
         self.intent_detector = IntentDetector(self.config, llm_client=self._llm_client)
+        self.retrieval_service = RetrievalService(
+            self.config,
+            qdrant_client_getter=self.get_qdrant_client,
+        )
 
     # ── Connections ───────────────────────────────────────────────────
 
@@ -109,6 +114,17 @@ class ResponsePipeline:
             yield self._frame("intent", intent_result.to_dict())
 
             # ── Stage 2+: Retrieval & Generation (placeholders) ───────
+            yield self._frame("status", {"stage": "retrieval"})
+
+            contexts = self.retrieval_service.retrive_vectors(
+                collection_name=collection,
+                user_prompt=user_prompt,
+                needs_logs=intent_result.needs_logs,
+                needs_commits=intent_result.needs_commits,
+                needs_postmortem=intent_result.needs_postmortem,
+            )
+            sources = self._collect_sources(contexts.get("commit_context"))
+
             yield self._frame(
                 "answer",
                 {
@@ -118,8 +134,9 @@ class ResponsePipeline:
                         f"needs_logs={intent_result.needs_logs}, "
                         f"needs_commits={intent_result.needs_commits}, "
                         f"needs_postmortem={intent_result.needs_postmortem}. "
-                        "Retrieval and generation stages coming next."
+                        "Retrieved available vector context."
                     ),
+                    **contexts,
                 },
             )
 
@@ -151,3 +168,18 @@ class ResponsePipeline:
     def _frame(event: str, data: Dict[str, Any]) -> str:
         """Serialize a single chunk as a newline-delimited JSON event."""
         return json.dumps({"event": event, "data": data}) + "\n"
+
+    @staticmethod
+    def _collect_sources(commit_context: Optional[List[Dict[str, Any]]]) -> List[str]:
+        """Extract unique source URLs or SHAs from commit retrieval results."""
+        sources: List[str] = []
+        seen = set()
+
+        for item in commit_context or []:
+            metadata = item.get("metadata") or {}
+            source = metadata.get("html_url") or metadata.get("commit_sha")
+            if source and source not in seen:
+                seen.add(source)
+                sources.append(source)
+
+        return sources
