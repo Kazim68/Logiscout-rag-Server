@@ -21,6 +21,8 @@ google-generativeai>=0.7.0
 
 # ── Vector DB (Response Pipeline) ────────────────────────────
 qdrant-client>=1.9.0
+huggingface-hub>=0.23.0
+sentence-transformers>=3.0.0
 
 # ── Testing ──────────────────────────────────────────────────
 pytest>=7.4.0

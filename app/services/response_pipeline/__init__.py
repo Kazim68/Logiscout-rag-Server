@@ -2,6 +2,8 @@
 
 from .config import ResponsePipelineConfig
 from .pipeline import ResponsePipeline
-from .retrieval_service import RetrievalService
+from .pipeline_steps import VectorRetrievalStep
 
-__all__ = ["ResponsePipelineConfig", "ResponsePipeline", "RetrievalService"]
+RetrievalService = VectorRetrievalStep
+
+__all__ = ["ResponsePipelineConfig", "ResponsePipeline", "VectorRetrievalStep", "RetrievalService"]

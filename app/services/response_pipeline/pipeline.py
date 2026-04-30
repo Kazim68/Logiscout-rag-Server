@@ -3,8 +3,8 @@ LogiScout Response Pipeline — entry point.
 
 Coordinates the multi-stage response flow:
     1. Intent detection (Gemini → Groq fallback chain)
-    2. (TODO) Retrieval from Qdrant
-    3. (TODO) Answer generation
+    2. Vector retrieval from Qdrant
+    3. Answer generation
 
 Usage:
     from app.services.response_pipeline import ResponsePipelineConfig, ResponsePipeline
@@ -21,8 +21,7 @@ import logging
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from .config import ResponsePipelineConfig
-from .pipeline_steps import IntentDetector, LLMClient
-from .retrieval_service import RetrievalService
+from .pipeline_steps import AnswerGenerator, IntentDetector, LLMClient, VectorRetrievalStep
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +36,8 @@ class ResponsePipeline:
         # Shared LLM client so the Gemini module is initialized once.
         self._llm_client = LLMClient(self.config)
         self.intent_detector = IntentDetector(self.config, llm_client=self._llm_client)
-        self.retrieval_service = RetrievalService(
+        self.answer_generator = AnswerGenerator(self.config, llm_client=self._llm_client)
+        self.vector_retrieval = VectorRetrievalStep(
             self.config,
             qdrant_client_getter=self.get_qdrant_client,
         )
@@ -57,9 +57,13 @@ class ResponsePipeline:
             logger.info("Qdrant client connected: %s", self.config.qdrant_url)
         return self._qdrant_client
 
-    def collection_name_for(self, project_id: str) -> str:
-        """Resolve the Qdrant collection name for a given project."""
-        return f"{project_id}{self.config.collection_suffix}"
+    def collection_names_for(self, project_id: str) -> Dict[str, str]:
+        """Resolve per-source Qdrant collection names for a given project."""
+        return {
+            "logs": f"{project_id}{self.config.logs_collection_suffix}",
+            "commits": f"{project_id}{self.config.commits_collection_suffix}",
+            "postmortem": f"{project_id}{self.config.postmortem_collection_suffix}",
+        }
 
     # ── Streaming Entry Point ─────────────────────────────────────────
 
@@ -77,17 +81,17 @@ class ResponsePipeline:
         A terminal `done` event is always emitted, even if a stage errors,
         so clients can rely on it to close the stream cleanly.
         """
-        collection = self.collection_name_for(project_id)
+        collections = self.collection_names_for(project_id)
         logger.info(
             "Response pipeline stream start — project=%s, collection=%s",
-            project_id, collection,
+            project_id, collections,
         )
 
         sources: list = []
         terminated_with_error = False
 
         try:
-            yield self._frame("status", {"stage": "init", "collection": collection})
+            yield self._frame("status", {"stage": "init", "collections": collections})
 
             # ── Stage 1: Intent Detection ─────────────────────────────
             yield self._frame("status", {"stage": "intent_detection"})
@@ -116,27 +120,32 @@ class ResponsePipeline:
             # ── Stage 2+: Retrieval & Generation (placeholders) ───────
             yield self._frame("status", {"stage": "retrieval"})
 
-            contexts = self.retrieval_service.retrive_vectors(
-                collection_name=collection,
+            contexts = self.vector_retrieval.retrieve_contexts(
+                project_id=project_id,
                 user_prompt=user_prompt,
                 needs_logs=intent_result.needs_logs,
                 needs_commits=intent_result.needs_commits,
                 needs_postmortem=intent_result.needs_postmortem,
             )
-            sources = self._collect_sources(contexts.get("commit_context"))
+            sources = self._collect_sources(contexts)
+            yield self._frame("status", {"stage": "answer_generation"})
+
+            answer_result = await self.answer_generator.generate(
+                vague_context=vague_context,
+                chat_context=chat_context,
+                user_prompt=user_prompt,
+                intent=intent_result.intent,
+                contexts=contexts,
+            )
 
             yield self._frame(
                 "answer",
                 {
-                    "text": (
-                        f"[scaffold] Detected intent: {intent_result.intent} "
-                        f"(confidence={intent_result.confidence:.2f}). "
-                        f"needs_logs={intent_result.needs_logs}, "
-                        f"needs_commits={intent_result.needs_commits}, "
-                        f"needs_postmortem={intent_result.needs_postmortem}. "
-                        "Retrieved available vector context."
-                    ),
+                    "text": answer_result.text,
+                    "provider": answer_result.provider,
+                    "warning": answer_result.error,
                     **contexts,
+                    "postmartems_context": contexts.get("postmortem_context"),
                 },
             )
 
@@ -170,16 +179,23 @@ class ResponsePipeline:
         return json.dumps({"event": event, "data": data}) + "\n"
 
     @staticmethod
-    def _collect_sources(commit_context: Optional[List[Dict[str, Any]]]) -> List[str]:
-        """Extract unique source URLs or SHAs from commit retrieval results."""
+    def _collect_sources(contexts: Dict[str, Optional[List[Dict[str, Any]]]]) -> List[str]:
+        """Extract unique sources from all retrieval result buckets."""
         sources: List[str] = []
         seen = set()
 
-        for item in commit_context or []:
-            metadata = item.get("metadata") or {}
-            source = metadata.get("html_url") or metadata.get("commit_sha")
-            if source and source not in seen:
-                seen.add(source)
-                sources.append(source)
+        for items in contexts.values():
+            for item in items or []:
+                metadata = item.get("metadata") or {}
+                source = (
+                    metadata.get("html_url")
+                    or metadata.get("commit_sha")
+                    or metadata.get("source")
+                    or metadata.get("file_path")
+                    or metadata.get("log_file")
+                )
+                if source and source not in seen:
+                    seen.add(source)
+                    sources.append(source)
 
         return sources

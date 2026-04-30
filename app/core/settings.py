@@ -39,7 +39,9 @@ class Settings(BaseSettings):
     # ── Qdrant (Vector DB) ──────────────────────────────────
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_API_KEY: Optional[str] = None
+    QDRANT_LOGS_COLLECTION_SUFFIX: str = "_logs"
     QDRANT_COMMITS_COLLECTION_SUFFIX: str = "_commits"
+    QDRANT_POSTMORTEM_COLLECTION_SUFFIX: str = "_postmortem"
 
     # ── Response Pipeline ───────────────────────────────────
     RESPONSE_TOP_K: int = 5

@@ -50,7 +50,9 @@ async def generate_response(payload: ResponseRequest):
         {"event": "<status|intent|answer|error|done>", "data": {...}}
 
     The `answer` event includes retrieval context keys:
-        log_context, commit_context, postmartems_context
+        log_context, commit_context, postmortem_context
+
+    The legacy `postmartems_context` key is also included for compatibility.
 
     A terminal `done` event is always emitted by the pipeline.
     """

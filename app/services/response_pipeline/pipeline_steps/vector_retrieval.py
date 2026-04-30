@@ -1,16 +1,16 @@
-"""Response-side vector retrieval service for pipeline context lookup."""
+"""Vector retrieval step for response pipeline context lookup."""
 
 from __future__ import annotations
 
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
-from .config import ResponsePipelineConfig
+from ..config import ResponsePipelineConfig
 
 logger = logging.getLogger(__name__)
 
 
-class RetrievalService:
+class VectorRetrievalStep:
     """Retrieves response context from vector storage."""
 
     def __init__(
@@ -66,8 +66,17 @@ class RetrievalService:
         collections = client.get_collections().collections
         return any(collection.name == collection_name for collection in collections)
 
+    def _collection_name_for(self, project_id: str, source_type: str) -> str:
+        """Build the project-scoped Qdrant collection name for a source type."""
+        suffix_by_type = {
+            "logs": self.config.logs_collection_suffix,
+            "commits": self.config.commits_collection_suffix,
+            "postmortem": self.config.postmortem_collection_suffix,
+        }
+        return f"{project_id}{suffix_by_type[source_type]}"
+
     @staticmethod
-    def _format_commit_hit(hit: Any) -> Dict[str, Any]:
+    def _format_hit(hit: Any) -> Dict[str, Any]:
         """Normalize a Qdrant hit into the response contract."""
         payload = dict(hit.payload or {})
         semantic_text = payload.pop("semantic_text", "")
@@ -79,8 +88,8 @@ class RetrievalService:
             "metadata": payload,
         }
 
-    def _search_commit_context(self, collection_name: str, user_prompt: str) -> List[Dict[str, Any]]:
-        """Query the commit collection for the most relevant commit documents."""
+    def _search_collection_context(self, collection_name: str, user_prompt: str) -> List[Dict[str, Any]]:
+        """Query a Qdrant collection for the most relevant documents."""
         if not user_prompt.strip():
             return []
 
@@ -90,56 +99,69 @@ class RetrievalService:
 
         client = self._qdrant_client_getter()
         query_vector = self._embed_query(user_prompt)
-        hits = client.search(
-            collection_name=collection_name,
-            query_vector=query_vector,
-            limit=self.config.top_k,
-            score_threshold=self.config.score_threshold,
-            with_payload=True,
-        )
-        return [self._format_commit_hit(hit) for hit in hits]
+        if hasattr(client, "query_points"):
+            response = client.query_points(
+                collection_name=collection_name,
+                query=query_vector,
+                limit=self.config.top_k,
+                score_threshold=self.config.score_threshold,
+                with_payload=True,
+                with_vectors=False,
+            )
+            hits = response.points
+        else:
+            hits = client.search(
+                collection_name=collection_name,
+                query_vector=query_vector,
+                limit=self.config.top_k,
+                score_threshold=self.config.score_threshold,
+                with_payload=True,
+            )
+        return [self._format_hit(hit) for hit in hits]
 
-    def retrive_vectors(
+    def retrieve_contexts(
         self,
         *,
-        collection_name: str,
+        project_id: str,
         user_prompt: str,
         needs_logs: bool,
         needs_commits: bool,
         needs_postmortem: bool,
     ) -> Dict[str, Optional[List[Dict[str, Any]]]]:
-        """
-        Return retrieval context grouped by source.
-
-        The function name intentionally follows the existing request contract.
-        """
+        """Return retrieval context grouped by source."""
         contexts: Dict[str, Optional[List[Dict[str, Any]]]] = {
             "log_context": None,
             "commit_context": None,
-            "postmartems_context": None,
+            "postmortem_context": None,
         }
 
         try:
             if needs_commits:
-                contexts["commit_context"] = self._search_commit_context(
-                    collection_name=collection_name,
+                contexts["commit_context"] = self._search_collection_context(
+                    collection_name=self._collection_name_for(project_id, "commits"),
                     user_prompt=user_prompt,
                 )
 
             if needs_logs:
-                logger.info("Log retrieval requested but not implemented yet; returning empty log_context")
-                contexts["log_context"] = []
+                contexts["log_context"] = self._search_collection_context(
+                    collection_name=self._collection_name_for(project_id, "logs"),
+                    user_prompt=user_prompt,
+                )
 
             if needs_postmortem:
-                logger.info(
-                    "Postmortem retrieval requested but not implemented yet; returning empty postmartems_context"
+                contexts["postmortem_context"] = self._search_collection_context(
+                    collection_name=self._collection_name_for(project_id, "postmortem"),
+                    user_prompt=user_prompt,
                 )
-                contexts["postmartems_context"] = []
         except Exception as exc:
-            logger.error("Vector retrieval failed for collection '%s': %s", collection_name, exc, exc_info=True)
+            logger.error("Vector retrieval failed for project '%s': %s", project_id, exc, exc_info=True)
 
         return contexts
 
     def retrieve_vectors(self, **kwargs):
-        """Correctly spelled alias for internal callers."""
-        return self.retrive_vectors(**kwargs)
+        """Backward-compatible alias for older internal callers."""
+        return self.retrieve_contexts(**kwargs)
+
+    def retrive_vectors(self, **kwargs):
+        """Backward-compatible alias for the legacy misspelled method name."""
+        return self.retrieve_contexts(**kwargs)
