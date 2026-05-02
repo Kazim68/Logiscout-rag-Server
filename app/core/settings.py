@@ -47,6 +47,15 @@ class Settings(BaseSettings):
     RESPONSE_TOP_K: int = 5
     RESPONSE_SCORE_THRESHOLD: float = 0.0
 
+    # ── ClickHouse (Related Logs Enrichment) ────────────────
+    CLICKHOUSE_HOST: str = "localhost"
+    CLICKHOUSE_PORT: int = 8123
+    CLICKHOUSE_USER: str = "default"
+    CLICKHOUSE_PASSWORD: str = ""
+    CLICKHOUSE_DATABASE: str = "logging"
+    CLICKHOUSE_LOGS_TABLE: str = "logs"
+    CLICKHOUSE_RELATED_LOGS_LIMIT: int = 50
+
     @classmethod
     def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings):
         """Make .env file override OS environment variables."""

@@ -32,6 +32,15 @@ class ResponsePipelineConfig:
     top_k: int = field(default_factory=lambda: settings.RESPONSE_TOP_K)
     score_threshold: float = field(default_factory=lambda: settings.RESPONSE_SCORE_THRESHOLD)
 
+    # ── ClickHouse (Related Logs Enrichment) ──────────────────────────
+    clickhouse_host: str = field(default_factory=lambda: settings.CLICKHOUSE_HOST)
+    clickhouse_port: int = field(default_factory=lambda: settings.CLICKHOUSE_PORT)
+    clickhouse_user: str = field(default_factory=lambda: settings.CLICKHOUSE_USER)
+    clickhouse_password: str = field(default_factory=lambda: settings.CLICKHOUSE_PASSWORD)
+    clickhouse_database: str = field(default_factory=lambda: settings.CLICKHOUSE_DATABASE)
+    clickhouse_logs_table: str = field(default_factory=lambda: settings.CLICKHOUSE_LOGS_TABLE)
+    clickhouse_related_logs_limit: int = field(default_factory=lambda: settings.CLICKHOUSE_RELATED_LOGS_LIMIT)
+
     # ── Embedding Model (must match ingestion side) ───────────────────
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     vector_size: int = 384

@@ -3,6 +3,7 @@
 from .answer_generator import AnswerGenerator, AnswerResult
 from .ID_fallback_chain import LLMClient, LLMUnavailableError
 from .intent_detector import IntentDetector, IntentResult
+from .log_enrichment import LogEnrichmentStep
 from .vector_retrieval import VectorRetrievalStep
 
 __all__ = [
@@ -12,5 +13,6 @@ __all__ = [
     "LLMUnavailableError",
     "IntentDetector",
     "IntentResult",
+    "LogEnrichmentStep",
     "VectorRetrievalStep",
 ]
