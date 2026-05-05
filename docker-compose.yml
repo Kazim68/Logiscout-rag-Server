@@ -3,7 +3,7 @@ name: logiscout-rag-server
 services:
   api:
     image: python:3.11
-    container_name: logiscout-api
+    container_name: logiscout-rag-api
     working_dir: /app
     restart: unless-stopped
     ports:
