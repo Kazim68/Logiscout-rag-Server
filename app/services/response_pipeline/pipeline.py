@@ -21,7 +21,13 @@ import logging
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from .config import ResponsePipelineConfig
-from .pipeline_steps import AnswerGenerator, IntentDetector, LLMClient, VectorRetrievalStep
+from .pipeline_steps import (
+    AnswerGenerator,
+    IntentDetector,
+    LLMClient,
+    LogEnrichmentStep,
+    VectorRetrievalStep,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +47,7 @@ class ResponsePipeline:
             self.config,
             qdrant_client_getter=self.get_qdrant_client,
         )
+        self.log_enrichment = LogEnrichmentStep(self.config)
 
     # ── Connections ───────────────────────────────────────────────────
 
@@ -128,6 +135,12 @@ class ResponsePipeline:
                 needs_postmortem=intent_result.needs_postmortem,
             )
             sources = self._collect_sources(contexts)
+
+            log_hits = contexts.get("log_context") or []
+            if intent_result.needs_logs and log_hits:
+                yield self._frame("status", {"stage": "log_enrichment"})
+                self.log_enrichment.enrich(log_hits)
+
             yield self._frame("status", {"stage": "answer_generation"})
 
             answer_result = await self.answer_generator.generate(
