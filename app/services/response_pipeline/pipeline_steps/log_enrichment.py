@@ -8,12 +8,24 @@ the LLM prompt by the answer generator, so no prompt changes are needed.
 
 from __future__ import annotations
 
+import datetime as _dt
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
 from ..config import ResponsePipelineConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _jsonable(value: Any) -> Any:
+    """Recursively coerce non-JSON-serializable types (datetime, etc.) to strings."""
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, (_dt.datetime, _dt.date)):
+        return value.isoformat()
+    return value
 
 
 class LogEnrichmentStep:
@@ -102,5 +114,5 @@ class LogEnrichmentStep:
             corr_id = row.get("correlationId")
             if corr_id is None:
                 continue
-            grouped.setdefault(corr_id, []).append(dict(row))
+            grouped.setdefault(corr_id, []).append(_jsonable(dict(row)))
         return grouped

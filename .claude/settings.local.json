@@ -3,7 +3,15 @@
     "allow": [
       "Bash(python:*)",
       "Bash(ngrok http:*)",
-      "Bash(curl -s http://127.0.0.1:4040/api/tunnels)"
+      "Bash(curl -s http://127.0.0.1:4040/api/tunnels)",
+      "Bash(docker exec logiscout-rag-api *)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec logiscout-rag-api ls -la /app/.env)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec logiscout-rag-api cat /app/.env)",
+      "Bash(docker exec *)",
+      "Bash(docker restart *)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec -w /app logiscout-rag-api python -m evaluation.run_evaluation --resume)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec *)",
+      "Bash(tee evaluation/eval_run.log)"
     ]
   }
 }

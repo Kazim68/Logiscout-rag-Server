@@ -1,0 +1,342 @@
+[
+  {
+    "id": "scenario_001",
+    "title": "Auth 401 after JWT secret env var missing",
+    "difficulty": "easy",
+    "incident_category": "config_drift",
+    "query": "Why are users getting 401 errors on the login endpoint since this morning?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-001-a", "corr-eval-001-b"],
+    "relevant_commit_shas": ["commit-001-a"],
+    "ground_truth_root_cause": "A recent commit (commit-001-a) changed the JWT validation logic in auth-service to read the signing secret from an environment variable JWT_SECRET using os.getenv() with no fallback default. This variable was not set in the production deployment environment, causing every token validation to throw a NullReferenceError and return 401 Unauthorized to all users."
+  },
+  {
+    "id": "scenario_002",
+    "title": "Payment service down after missing Stripe API key in new deploy",
+    "difficulty": "easy",
+    "incident_category": "config_drift",
+    "query": "Why is the checkout endpoint failing for all users since the deployment this afternoon?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-002-a", "corr-eval-002-b"],
+    "relevant_commit_shas": ["commit-002-a"],
+    "ground_truth_root_cause": "A recent commit (commit-002-a) refactored the payment-service configuration loader to read STRIPE_SECRET_KEY from environment variables instead of a bundled config file. The new production deployment did not include this variable in its environment, causing every call to the Stripe client to throw an AuthenticationError and return 500 to the checkout endpoint."
+  },
+  {
+    "id": "scenario_003",
+    "title": "Email service silently failing after SMTP host config removed",
+    "difficulty": "medium",
+    "incident_category": "config_drift",
+    "query": "Users are not receiving password reset emails. When did this start and why?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-003-a", "corr-eval-003-b", "corr-eval-003-c"],
+    "relevant_commit_shas": ["commit-003-a"],
+    "ground_truth_root_cause": "A commit (commit-003-a) moved the notification-service SMTP configuration from a hardcoded default to a required SMTP_HOST environment variable. The staging and production deployments were not updated with this variable. The SMTP client silently falls back to localhost:25, which is not a valid mail relay in the production environment, causing all outbound emails to fail with a ConnectionRefusedError that is caught and swallowed by the outer try/except block."
+  },
+  {
+    "id": "scenario_004",
+    "title": "Database connection pool exhausted under load",
+    "difficulty": "medium",
+    "incident_category": "dependency_failure",
+    "query": "The API is returning 503 errors and is extremely slow. What is causing it?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": false,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-004-a", "corr-eval-004-b", "corr-eval-004-c"],
+    "relevant_commit_shas": [],
+    "ground_truth_root_cause": "The PostgreSQL connection pool in order-service is exhausted. A recent traffic spike to the /api/orders endpoint triggered a large number of concurrent requests, each of which opens a database connection and holds it open during a slow external inventory API call. The pool maximum of 10 connections is reached, causing new requests to wait indefinitely and eventually time out. The root cause is that the inventory API call is made while holding an open DB transaction, preventing connection release."
+  },
+  {
+    "id": "scenario_005",
+    "title": "Redis cache cluster unreachable causing full DB fallback storm",
+    "difficulty": "hard",
+    "incident_category": "dependency_failure",
+    "query": "Why did our database CPU spike to 100% and cause widespread 500 errors this morning?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": false,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-005-a", "corr-eval-005-b", "corr-eval-005-c"],
+    "relevant_commit_shas": [],
+    "ground_truth_root_cause": "The Redis cache cluster became unreachable due to a network partition at 09:14. The product-service cache client is configured with a 0ms timeout and falls back to a direct PostgreSQL query on any cache miss or connection error. With Redis down, every single request hitting the product catalog endpoint bypassed the cache, resulting in a full DB query per request. The combined query load from all concurrent users drove PostgreSQL CPU to 100%, causing query timeouts and cascading 500 errors across all services that depend on product data."
+  },
+  {
+    "id": "scenario_006",
+    "title": "Third-party shipping API rate limit causing order failures",
+    "difficulty": "medium",
+    "incident_category": "dependency_failure",
+    "query": "Orders are failing at the shipping calculation step since 2pm. What is going wrong?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": false,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-006-a", "corr-eval-006-b"],
+    "relevant_commit_shas": [],
+    "ground_truth_root_cause": "The shipping-service is receiving HTTP 429 Too Many Requests responses from the ShipStation API after exceeding the 500 requests/minute rate limit. A promotional campaign launched at 13:55 caused order volume to triple, pushing shipping rate calculation requests above the API limit. The shipping-service has no retry backoff or circuit breaker — it propagates the 429 directly as a 500 to the order-service, failing the entire checkout flow rather than queuing or degrading gracefully."
+  },
+  {
+    "id": "scenario_007",
+    "title": "Null pointer exception after removing optional field default",
+    "difficulty": "medium",
+    "incident_category": "code_regression",
+    "query": "We are getting NullPointerExceptions on the user profile endpoint. What changed?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-007-a", "corr-eval-007-b"],
+    "relevant_commit_shas": ["commit-007-a"],
+    "ground_truth_root_cause": "A commit (commit-007-a) refactored the UserProfile serializer in user-service and removed the default value for the optional 'avatar_url' field. Existing users whose profiles were created before avatar upload was a feature have a null avatar_url in the database. The new serializer code calls avatar_url.split('/') without a null check, throwing a NullPointerException for these legacy users and returning 500 on the GET /api/users/{id}/profile endpoint."
+  },
+  {
+    "id": "scenario_008",
+    "title": "Order total calculation wrong after discount logic refactor",
+    "difficulty": "medium",
+    "incident_category": "code_regression",
+    "query": "Customers are reporting incorrect order totals — some orders are showing as free. What happened?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-008-a", "corr-eval-008-b", "corr-eval-008-c"],
+    "relevant_commit_shas": ["commit-008-a"],
+    "ground_truth_root_cause": "A commit (commit-008-a) refactored the discount calculation logic in order-service. The new code applies the percentage discount multiplier before the subtotal is computed rather than after, causing orders with any active discount code to calculate the pre-tax discount base as zero. Orders with a discount applied are returning a final total of $0.00. Orders without discounts are unaffected."
+  },
+  {
+    "id": "scenario_009",
+    "title": "Search returning empty results after query builder refactor",
+    "difficulty": "easy",
+    "incident_category": "code_regression",
+    "query": "Product search is returning zero results for everything. What broke?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-009-a", "corr-eval-009-b"],
+    "relevant_commit_shas": ["commit-009-a"],
+    "ground_truth_root_cause": "A commit (commit-009-a) refactored the Elasticsearch query builder in search-service. The new builder wraps all search terms in a must_not clause instead of a must clause due to a copy-paste error, causing every search to return only documents that do NOT match the query. The query executes successfully and returns HTTP 200 with an empty hits array, so no error is logged — the bug is silently returning anti-results."
+  },
+  {
+    "id": "scenario_010",
+    "title": "API pods OOM-killed after memory leak in image processing",
+    "difficulty": "hard",
+    "incident_category": "resource_exhaustion",
+    "query": "Our product image upload service keeps crashing and restarting every few hours. What is causing this?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-010-a", "corr-eval-010-b", "corr-eval-010-c"],
+    "relevant_commit_shas": ["commit-010-a"],
+    "ground_truth_root_cause": "A commit (commit-010-a) added thumbnail generation to the image-upload-service using Pillow. The image processing function opens the uploaded file into a PIL Image object but never calls image.close() or uses a context manager. Each upload request leaks a file handle and the associated image buffer into memory. Under normal upload volume the container reaches its 512MB memory limit within 3–4 hours and is OOM-killed by Kubernetes, restarting the pod and dropping all in-flight uploads."
+  },
+  {
+    "id": "scenario_011",
+    "title": "Worker queue backlog causing job timeout cascade",
+    "difficulty": "hard",
+    "incident_category": "resource_exhaustion",
+    "query": "Background jobs are timing out and the job queue depth keeps growing. Why is processing falling behind?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-011-a", "corr-eval-011-b", "corr-eval-011-c"],
+    "relevant_commit_shas": ["commit-011-a"],
+    "ground_truth_root_cause": "A commit (commit-011-a) added a synchronous external PDF generation API call inside the order confirmation job handler in worker-service. The PDF API has a p99 latency of 12 seconds. With 4 worker threads and job volume of 50 jobs/minute, all worker threads are blocked waiting on the PDF API, causing the Celery queue to back up. Jobs at the head of the queue exceed the 30-second visibility timeout, are requeued, and processed again — creating duplicate processing and accelerating queue depth growth."
+  },
+  {
+    "id": "scenario_012",
+    "title": "Session token hijacking after insecure cookie flag removed",
+    "difficulty": "medium",
+    "incident_category": "auth_security",
+    "query": "We are seeing suspicious session activity — users are being logged in as each other. What is happening?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-012-a", "corr-eval-012-b"],
+    "relevant_commit_shas": ["commit-012-a"],
+    "ground_truth_root_cause": "A commit (commit-012-a) changed the session cookie configuration in auth-service during a refactor of the cookie options object. The Secure and HttpOnly flags were accidentally removed from the Set-Cookie header. Session tokens are now transmitted over plain HTTP and are accessible to JavaScript, making them vulnerable to interception and XSS-based theft. The suspicious cross-user activity is caused by session tokens being stolen and replayed by an attacker."
+  },
+  {
+    "id": "scenario_013",
+    "title": "OAuth token rotation breaking third-party integrations",
+    "difficulty": "medium",
+    "incident_category": "auth_security",
+    "query": "Third-party API integrations are returning 403 Forbidden errors after last night's maintenance window.",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-013-a", "corr-eval-013-b", "corr-eval-013-c"],
+    "relevant_commit_shas": ["commit-013-a"],
+    "ground_truth_root_cause": "A commit (commit-013-a) implemented automated OAuth2 client credential rotation as part of a security hardening initiative. The rotation script successfully generated new client IDs and secrets and updated the secrets manager, but did not propagate the new credentials to the integration-service environment variables — which are loaded only at container startup. All running integration-service containers continue to use the old, now-revoked credentials, receiving 403 Forbidden from every external OAuth endpoint until the containers are restarted."
+  },
+  {
+    "id": "scenario_014",
+    "title": "Upstream payment timeout causing inventory hold cascade",
+    "difficulty": "hard",
+    "incident_category": "cascade_failure",
+    "query": "A huge number of orders are stuck in processing and inventory is showing items as unavailable that are actually in stock. What is happening?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": false,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-014-a", "corr-eval-014-b", "corr-eval-014-c"],
+    "relevant_commit_shas": [],
+    "ground_truth_root_cause": "The payment-gateway service began returning HTTP 504 Gateway Timeout at 11:32 due to an upstream provider outage. The order-service places an inventory hold before calling payment. When payment times out, the order is marked as failed but the inventory hold release step is never called because it is implemented in the payment success callback — not in the failure or timeout handler. Inventory items remain held indefinitely, making in-stock products appear unavailable and blocking new purchases."
+  },
+  {
+    "id": "scenario_015",
+    "title": "Notification service retry storm amplifying downstream DB load",
+    "difficulty": "hard",
+    "incident_category": "cascade_failure",
+    "query": "Our database is being hammered with thousands of duplicate queries and the notification service logs are showing constant retry loops. What triggered this?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-015-a", "corr-eval-015-b", "corr-eval-015-c"],
+    "relevant_commit_shas": ["commit-015-a"],
+    "ground_truth_root_cause": "A commit (commit-015-a) introduced a bug in the notification-service retry handler: on any send failure it immediately retries with no backoff and no maximum retry count. A transient SMTP outage at 14:05 caused the first send failure. The retry loop spun at full speed for each pending notification, and each retry attempt queries the database to reload the user's notification preferences. The resulting flood of DB queries saturated the connection pool, causing query timeouts that were themselves treated as failures — triggering more retries and amplifying the load further."
+  },
+  {
+    "id": "scenario_016",
+    "title": "New column migration breaking existing ORM queries in production",
+    "difficulty": "medium",
+    "incident_category": "schema_migration",
+    "query": "The orders listing page is broken with 500 errors for all users since the deploy this morning. What happened?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-016-a", "corr-eval-016-b"],
+    "relevant_commit_shas": ["commit-016-a"],
+    "ground_truth_root_cause": "A commit (commit-016-a) added a database migration that renamed the column 'status' to 'fulfillment_status' in the orders table. The migration ran successfully but the ORM model in order-service was not updated in the same deployment — it still references the old column name 'status'. Every query using the ORM model now raises a 'column orders.status does not exist' ProgrammingError, returning 500 on all endpoints that list or update orders."
+  },
+  {
+    "id": "scenario_017",
+    "title": "Non-nullable column added without default crashing inserts",
+    "difficulty": "medium",
+    "incident_category": "schema_migration",
+    "query": "New user registrations are failing with database errors since the morning deployment. What is wrong?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-017-a", "corr-eval-017-b", "corr-eval-017-c"],
+    "relevant_commit_shas": ["commit-017-a"],
+    "ground_truth_root_cause": "A commit (commit-017-a) added a database migration that introduced a new NOT NULL column 'referral_source' to the users table without a DEFAULT value. The application code that handles user registration in user-service was not updated to supply this field. Every INSERT statement for a new user registration violates the NOT NULL constraint and raises an IntegrityError, returning 500 on the POST /api/auth/register endpoint."
+  },
+  {
+    "id": "scenario_018",
+    "title": "Index dropped by migration causing full table scans and timeouts",
+    "difficulty": "hard",
+    "incident_category": "schema_migration",
+    "query": "The admin dashboard is timing out when loading the transaction history and the database is pegged at high CPU. What is going on?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-018-a", "corr-eval-018-b", "corr-eval-018-c"],
+    "relevant_commit_shas": ["commit-018-a"],
+    "ground_truth_root_cause": "A commit (commit-018-a) ran a migration to rebuild the transactions table index after adding a composite key. The migration script dropped the existing index on (user_id, created_at) and created a new one on (user_id, created_at, status) but the CREATE INDEX was run without CONCURRENTLY and then rolled back mid-way due to a lock timeout. The rollback left the original index permanently dropped. Queries filtering transactions by user_id and date range now perform full sequential scans on a 50M-row table, causing 30-second query timeouts."
+  },
+  {
+    "id": "scenario_019",
+    "title": "Double-booking caused by concurrent reservation writes",
+    "difficulty": "hard",
+    "incident_category": "race_condition",
+    "query": "We have customers who booked the same seat on the same flight. How did this happen?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-019-a", "corr-eval-019-b", "corr-eval-019-c"],
+    "relevant_commit_shas": ["commit-019-a"],
+    "ground_truth_root_cause": "A commit (commit-019-a) refactored the booking-service reservation flow to improve performance by removing a SELECT FOR UPDATE lock on the seat row during availability checks. The new flow reads seat availability, confirms it is free, then writes the reservation in a separate transaction. Under concurrent load, two requests can both read the seat as available, both pass the availability check, and both commit their reservation — creating a double-booking. The fix requires restoring the pessimistic row lock or using an optimistic concurrency check with a version counter."
+  },
+  {
+    "id": "scenario_020",
+    "title": "Duplicate invoice generation from concurrent webhook delivery",
+    "difficulty": "hard",
+    "incident_category": "race_condition",
+    "query": "Some customers are receiving multiple invoices for the same order. When did this start and what is causing it?",
+    "project_id": "69fcea90cbb613a79de43939",
+    "expected_intent": "incident_investigation",
+    "expected_retrieval_flags": {
+      "needs_logs": true,
+      "needs_commits": true,
+      "needs_postmortem": false
+    },
+    "relevant_log_cids": ["corr-eval-020-a", "corr-eval-020-b", "corr-eval-020-c"],
+    "relevant_commit_shas": ["commit-020-a"],
+    "ground_truth_root_cause": "A commit (commit-020-a) increased the Stripe webhook worker concurrency from 1 to 5 to reduce processing latency. Stripe sometimes delivers the same webhook event more than once within milliseconds when it does not receive an immediate acknowledgement. With 5 concurrent workers, two workers can now receive the same payment.succeeded event simultaneously, both pass the idempotency check (which uses a read-then-write pattern with no locking), and both trigger the invoice generation job — producing duplicate invoices. The fix requires an atomic upsert or a distributed lock on the webhook event ID before processing."
+  }
+]

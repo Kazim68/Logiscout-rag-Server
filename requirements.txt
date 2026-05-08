@@ -12,6 +12,9 @@ python-dotenv>=1.0.0
 httpx>=0.25.0
 aiofiles>=23.2.0
 requests>=2.31.0
+fastembed>=0.5.0
+pandas>=2.0.0
+matplotlib>=3.7.2
 
 # ── Cron / Scheduler ─────────────────────────────────────────
 apscheduler>=3.10.0
