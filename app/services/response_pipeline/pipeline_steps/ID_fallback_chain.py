@@ -1,8 +1,10 @@
 """
 Intent-Detection LLM fallback chain.
 
-Tries Gemini models first, then falls back to Groq. If every provider
-fails, raises LLMUnavailableError so callers can surface a clean error.
+Tries each Gemini API key (across the configured models) first, then each
+Groq API key. A provider is only considered exhausted once every key fails.
+If every provider fails, raises LLMUnavailableError so callers can surface
+a clean error.
 
 All network calls are async — Gemini via its async API, Groq via httpx.
 """
@@ -19,35 +21,36 @@ class LLMUnavailableError(RuntimeError):
     """Raised when every provider in the fallback chain has failed."""
 
 
+def _mask(key: str) -> str:
+    """Render a key as a short suffix for logs without leaking the secret."""
+    if not key:
+        return "<empty>"
+    return f"...{key[-4:]}" if len(key) > 4 else "***"
+
+
 class LLMClient:
-    """Async LLM client implementing a Gemini → Groq fallback chain."""
+    """Async LLM client implementing a Gemini → Groq fallback chain with
+    multi-key rotation per provider."""
 
     def __init__(self, config):
         self.config = config
-        self._gemini_module = None
 
     # ── Gemini ────────────────────────────────────────────────────────
 
-    def _get_gemini_module(self):
-        if self._gemini_module is None:
-            import google.generativeai as genai
-            if not self.config.gemini_key:
-                raise RuntimeError("GEMINI_KEY not configured")
-            genai.configure(api_key=self.config.gemini_key)
-            self._gemini_module = genai
-            logger.info("Gemini client initialized")
-        return self._gemini_module
-
-    async def _call_gemini(
+    async def _call_gemini_with_key(
         self,
+        api_key: str,
         system_prompt: str,
         user_prompt: str,
         models: tuple,
     ) -> Optional[str]:
+        """Try every model under a single API key. Returns text on first
+        success, None if every model fails for this key."""
         try:
-            genai = self._get_gemini_module()
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
         except Exception as e:
-            logger.warning("Gemini unavailable (init failed): %s", e)
+            logger.warning("Gemini init failed for key %s: %s", _mask(api_key), e)
             return None
 
         for model_name in models:
@@ -65,30 +68,60 @@ class LLMClient:
                 )
                 text = getattr(response, "text", None)
                 if text and text.strip():
-                    logger.info("Gemini OK via model: %s", model_name)
+                    logger.info(
+                        "Gemini OK via model=%s key=%s", model_name, _mask(api_key),
+                    )
                     return text
-                logger.warning("Gemini model %s returned empty response", model_name)
+                logger.warning(
+                    "Gemini model=%s key=%s returned empty response",
+                    model_name, _mask(api_key),
+                )
             except Exception as e:
-                logger.warning("Gemini model %s failed: %s", model_name, e)
+                logger.warning(
+                    "Gemini model=%s key=%s failed: %s",
+                    model_name, _mask(api_key), e,
+                )
                 continue
+        return None
 
-        logger.error("All Gemini models failed: %s", models)
+    async def _call_gemini(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        models: tuple,
+    ) -> Optional[str]:
+        keys = tuple(self.config.gemini_keys)
+        if not keys:
+            logger.warning("Gemini skipped: no GEMINI_KEY_* configured")
+            return None
+
+        for api_key in keys:
+            text = await self._call_gemini_with_key(
+                api_key, system_prompt, user_prompt, models,
+            )
+            if text:
+                return text
+            logger.warning(
+                "Gemini key %s exhausted across all models — rotating",
+                _mask(api_key),
+            )
+
+        logger.error(
+            "All Gemini keys (%d) failed across models %s", len(keys), models,
+        )
         return None
 
     # ── Groq ──────────────────────────────────────────────────────────
 
-    async def _call_groq(
+    async def _call_groq_with_key(
         self,
+        api_key: str,
         system_prompt: str,
         user_prompt: str,
         model: str,
     ) -> Optional[str]:
-        if not self.config.groq_api_key:
-            logger.warning("Groq fallback skipped: GROQ_API_KEY not configured")
-            return None
-
         headers = {
-            "Authorization": f"Bearer {self.config.groq_api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
         payload = {
@@ -110,18 +143,45 @@ class LLMClient:
                 )
 
             if resp.status_code != 200:
-                logger.error("Groq API error %d: %s", resp.status_code, resp.text[:300])
+                logger.error(
+                    "Groq API error %d (key=%s): %s",
+                    resp.status_code, _mask(api_key), resp.text[:300],
+                )
                 return None
 
             content = resp.json()["choices"][0]["message"]["content"]
             if content and content.strip():
-                logger.info("Groq OK via model: %s", model)
+                logger.info("Groq OK via model=%s key=%s", model, _mask(api_key))
                 return content
-            logger.warning("Groq model %s returned empty response", model)
+            logger.warning(
+                "Groq model=%s key=%s returned empty response", model, _mask(api_key),
+            )
             return None
         except Exception as e:
-            logger.error("Groq API exception: %s", e)
+            logger.error("Groq API exception (key=%s): %s", _mask(api_key), e)
             return None
+
+    async def _call_groq(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        model: str,
+    ) -> Optional[str]:
+        keys = tuple(self.config.groq_api_keys)
+        if not keys:
+            logger.warning("Groq fallback skipped: no GROQ_API_KEY_* configured")
+            return None
+
+        for api_key in keys:
+            text = await self._call_groq_with_key(
+                api_key, system_prompt, user_prompt, model,
+            )
+            if text:
+                return text
+            logger.warning("Groq key %s failed — rotating", _mask(api_key))
+
+        logger.error("All Groq keys (%d) failed for model %s", len(keys), model)
+        return None
 
     # ── Public API ────────────────────────────────────────────────────
 
@@ -132,6 +192,8 @@ class LLMClient:
     ) -> str:
         """
         Run the full Gemini → Groq fallback chain for a single completion.
+        Each provider rotates through its full set of API keys before the
+        chain advances to the next provider.
 
         Raises LLMUnavailableError if every provider fails.
         """
@@ -149,9 +211,11 @@ class LLMClient:
             return text
 
         logger.error(
-            "LLM fallback chain exhausted — Gemini=%s, Groq=%s",
+            "LLM fallback chain exhausted — Gemini models=%s keys=%d, Groq model=%s keys=%d",
             list(self.config.gemini_intent_models),
+            len(self.config.gemini_keys),
             self.config.groq_intent_model,
+            len(self.config.groq_api_keys),
         )
         raise LLMUnavailableError(
             "LLM service not available — both Gemini and Groq providers failed."

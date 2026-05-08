@@ -3,6 +3,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Tuple, List, Dict
 
+from app.core.settings import settings
+
 
 # ── Default Prompt Template ───────────────────────────────────────────
 # Plain English summary — no JSON output required.
@@ -100,17 +102,31 @@ class CommitPipelineConfig:
     # ── LLM (configurable provider) ───────────────────────────────────
     llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "gemini"))  # "gemini" or "groq"
 
-    # Gemini settings
-    gemini_key: str = field(default_factory=lambda: os.getenv("GEMINI_KEY", ""))
+    # Gemini settings — multiple keys rotated on failure (GEMINI_KEY_1..N)
+    gemini_keys: Tuple[str, ...] = field(
+        default_factory=lambda: tuple(settings.GEMINI_KEYS)
+    )
     gemini_models_to_try: Tuple[str, ...] = ("gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite")
 
-    # Groq settings (reused from OLD_GITHUB_PIPELINE)
-    groq_api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
+    # Groq settings — multiple keys rotated on failure (GROQ_API_KEY_1..N)
+    groq_api_keys: Tuple[str, ...] = field(
+        default_factory=lambda: tuple(settings.GROQ_API_KEYS)
+    )
     groq_api_url: str = "https://api.groq.com/openai/v1/chat/completions"
     groq_model: str = field(default_factory=lambda: os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"))
     groq_temperature: float = 0.3
     groq_max_tokens: int = 300
     groq_timeout: int = 20
+
+    @property
+    def gemini_key(self) -> str:
+        """Backward-compat single-key accessor."""
+        return self.gemini_keys[0] if self.gemini_keys else ""
+
+    @property
+    def groq_api_key(self) -> str:
+        """Backward-compat single-key accessor."""
+        return self.groq_api_keys[0] if self.groq_api_keys else ""
 
 
 
@@ -131,15 +147,17 @@ class CommitPipelineConfig:
 
     @classmethod
     def from_env(cls) -> "CommitPipelineConfig":
-        """Create config from environment variables."""
+        """Create config from environment variables. Multi-key fields
+        (gemini_keys / groq_api_keys) come from app.core.settings, which
+        already collects GEMINI_KEY_1..N / GROQ_API_KEY_1..N."""
         return cls(
             github_api_base=os.getenv("GITHUB_API_BASE", "https://api.github.com"),
             github_webhook_secret=os.getenv("GITHUB_WEBHOOK_SECRET", ""),
             qdrant_url=os.getenv("QDRANT_URL", "http://localhost:6333"),
             collection_commits=os.getenv("QDRANT_COMMITS_COLLECTION", "logiscout_commits"),
             llm_provider=os.getenv("LLM_PROVIDER", "gemini"),
-            gemini_key=os.getenv("GEMINI_KEY", ""),
-            groq_api_key=os.getenv("GROQ_API_KEY", ""),
+            gemini_keys=tuple(settings.GEMINI_KEYS),
+            groq_api_keys=tuple(settings.GROQ_API_KEYS),
             groq_model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
             max_diff_chars=int(os.getenv("MAX_DIFF_CHARS", "4000")),
         )

@@ -47,12 +47,31 @@ class ResponsePipelineConfig:
 
     # ── LLM Fallback Chain (Intent Detection & beyond) ────────────────
     # Primary: Gemini. Fallback: Groq llama-3.3-70b-versatile.
-    gemini_key: str = field(default_factory=lambda: settings.GEMINI_KEY or "")
+    # Each provider accepts a list of API keys — the fallback chain rotates
+    # through them in order, retrying on rate limits / auth errors / any
+    # provider-side failure before giving up on the provider.
+    gemini_keys: Tuple[str, ...] = field(
+        default_factory=lambda: tuple(settings.GEMINI_KEYS)
+    )
     gemini_intent_models: Tuple[str, ...] = ("gemini-2.5-flash",)
 
-    groq_api_key: str = field(default_factory=lambda: settings.GROQ_API_KEY or "")
+    groq_api_keys: Tuple[str, ...] = field(
+        default_factory=lambda: tuple(settings.GROQ_API_KEYS)
+    )
     groq_api_url: str = "https://api.groq.com/openai/v1/chat/completions"
     groq_intent_model: str = field(default_factory=lambda: settings.GROQ_INTENT_MODEL)
+
+    @property
+    def gemini_key(self) -> str:
+        """First configured Gemini key, or empty string. Backward-compat
+        accessor for callers that only need a single key."""
+        return self.gemini_keys[0] if self.gemini_keys else ""
+
+    @property
+    def groq_api_key(self) -> str:
+        """First configured Groq key, or empty string. Backward-compat
+        accessor for callers that only need a single key."""
+        return self.groq_api_keys[0] if self.groq_api_keys else ""
 
     llm_temperature: float = 0.1
     llm_max_tokens: int = 1024

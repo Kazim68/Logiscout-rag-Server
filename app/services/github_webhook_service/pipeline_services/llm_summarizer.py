@@ -12,38 +12,38 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
+def _mask(key: str) -> str:
+    if not key:
+        return "<empty>"
+    return f"...{key[-4:]}" if len(key) > 4 else "***"
+
+
 class LLMSummarizerService:
     """
     Handles LLM interaction for commit diff summarization.
 
     Supports configurable provider: "gemini" (via google.generativeai) or
     "groq" (via HTTP API, reused from OLD_GITHUB_PIPELINE/groq_client.py).
+    Each provider rotates through every configured API key
+    (GEMINI_KEY_1..N / GROQ_API_KEY_1..N) before giving up.
     Switching requires only an .env change — no code changes.
     """
 
     def __init__(self, config):
         self.config = config
-        self._gemini_client = None
 
     # ── 1. Gemini Client ──────────────────────────────────────────────
 
-    def _create_gemini_client(self):
-        """Initializes and caches the Gemini client."""
-        if self._gemini_client is None:
+    def _call_gemini_with_key(
+        self, api_key: str, system_prompt: str, user_prompt: str,
+    ) -> Optional[str]:
+        """Try every model under a single Gemini API key."""
+        try:
             import google.generativeai as genai
-            genai.configure(api_key=self.config.gemini_key)
-            self._gemini_client = genai
-            logger.info("Gemini client initialized")
-        return self._gemini_client
-
-    def _call_gemini(self, system_prompt: str, user_prompt: str) -> Optional[str]:
-        """
-        Sends the prompt to Gemini with model fallback.
-
-        Same pattern as LLMService in the LLM Response Pipeline.
-        Returns raw response text, or None if all models fail.
-        """
-        genai = self._create_gemini_client()
+            genai.configure(api_key=api_key)
+        except Exception as e:
+            logger.warning("Gemini init failed for key %s: %s", _mask(api_key), e)
+            return None
 
         for model_name in self.config.gemini_models_to_try:
             try:
@@ -52,33 +52,50 @@ class LLMSummarizerService:
                     system_instruction=system_prompt,
                 )
                 response = model.generate_content(user_prompt)
-                logger.info(f"Gemini response generated using model: {model_name}")
+                logger.info(
+                    "Gemini OK via model=%s key=%s", model_name, _mask(api_key),
+                )
                 return response.text
             except Exception as e:
-                logger.warning(f"Gemini model {model_name} failed: {e}")
+                logger.warning(
+                    "Gemini model=%s key=%s failed: %s",
+                    model_name, _mask(api_key), e,
+                )
                 continue
+        return None
 
-        logger.error(f"All Gemini models failed: {self.config.gemini_models_to_try}")
+    def _call_gemini(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+        """Rotate through every Gemini key. Returns raw response text on first
+        success, or None if every key/model combination fails."""
+        keys = tuple(self.config.gemini_keys)
+        if not keys:
+            logger.warning("Gemini skipped: no GEMINI_KEY_* configured")
+            return None
+
+        for api_key in keys:
+            text = self._call_gemini_with_key(api_key, system_prompt, user_prompt)
+            if text:
+                return text
+            logger.warning(
+                "Gemini key %s exhausted across all models — rotating",
+                _mask(api_key),
+            )
+
+        logger.error(
+            "All Gemini keys (%d) failed across models %s",
+            len(keys), self.config.gemini_models_to_try,
+        )
         return None
 
     # ── 2. Groq Client (reused from OLD_GITHUB_PIPELINE/groq_client.py) ──
 
-    def _call_groq(self, system_prompt: str, user_prompt: str) -> Optional[str]:
-        """
-        Sends the prompt to Groq via HTTP API.
-
-        Reused logic from OLD_GITHUB_PIPELINE/groq_client.py, adapted from
-        async httpx to sync requests for consistency with this pipeline.
-        """
-        if not self.config.groq_api_key:
-            logger.warning("Groq API key not configured")
-            return None
-
+    def _call_groq_with_key(
+        self, api_key: str, system_prompt: str, user_prompt: str,
+    ) -> Optional[str]:
         headers = {
-            "Authorization": f"Bearer {self.config.groq_api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-
         payload = {
             "model": self.config.groq_model,
             "messages": [
@@ -98,16 +115,41 @@ class LLMSummarizerService:
             )
 
             if response.status_code != 200:
-                logger.error("Groq API error %d: %s", response.status_code, response.text[:300])
+                logger.error(
+                    "Groq API error %d (key=%s): %s",
+                    response.status_code, _mask(api_key), response.text[:300],
+                )
                 return None
 
             result = response.json()["choices"][0]["message"]["content"]
-            logger.info("Groq response generated using model: %s", self.config.groq_model)
+            logger.info(
+                "Groq OK via model=%s key=%s",
+                self.config.groq_model, _mask(api_key),
+            )
             return result
 
         except Exception as e:
-            logger.error("Groq API exception: %s", e)
+            logger.error("Groq API exception (key=%s): %s", _mask(api_key), e)
             return None
+
+    def _call_groq(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+        """Rotate through every Groq key."""
+        keys = tuple(self.config.groq_api_keys)
+        if not keys:
+            logger.warning("Groq skipped: no GROQ_API_KEY_* configured")
+            return None
+
+        for api_key in keys:
+            text = self._call_groq_with_key(api_key, system_prompt, user_prompt)
+            if text:
+                return text
+            logger.warning("Groq key %s failed — rotating", _mask(api_key))
+
+        logger.error(
+            "All Groq keys (%d) failed for model %s",
+            len(keys), self.config.groq_model,
+        )
+        return None
 
     # ── 3. Dispatch to Provider ───────────────────────────────────────
 
