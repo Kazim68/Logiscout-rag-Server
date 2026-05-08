@@ -65,3 +65,6 @@ alembic/versions/*.pyc
 
 instructions.md
 overview.md
+
+.claude
+.cache

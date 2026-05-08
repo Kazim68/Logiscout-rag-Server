@@ -2,56 +2,23 @@ name: logiscout-rag-server
 
 services:
   api:
-    image: python:3.11
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: logiscout-rag-server:latest
     container_name: logiscout-rag-api
     working_dir: /app
     restart: unless-stopped
     ports:
       - "9000:9000"
+    env_file:
+      - .env
     environment:
       PYTHONUNBUFFERED: "1"
-      APP_NAME: ${APP_NAME:-LogiScout}
-      APP_VERSION: ${APP_VERSION:-0.1.0}
-      DEBUG: ${DEBUG:-false}
-      ENV: ${ENV:-development}
-      API_V1_PREFIX: ${API_V1_PREFIX:-/api/v1}
-      ALLOWED_ORIGINS: '${ALLOWED_ORIGINS:-["*"]}'
-      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
-      GITHUB_REPO: ${GITHUB_REPO:-}
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
-      # LLM API keys — numbered variants are rotated by the fallback chain.
-      # Legacy unsuffixed GEMINI_KEY / GROQ_API_KEY are kept for backwards
-      # compatibility and used if no numbered keys are present.
-      GEMINI_KEY: ${GEMINI_KEY:-}
-      GEMINI_KEY_1: ${GEMINI_KEY_1:-}
-      GEMINI_KEY_2: ${GEMINI_KEY_2:-}
-      GEMINI_KEY_3: ${GEMINI_KEY_3:-}
-      GEMINI_KEY_4: ${GEMINI_KEY_4:-}
-      GEMINI_KEY_5: ${GEMINI_KEY_5:-}
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
-      GROQ_API_KEY_1: ${GROQ_API_KEY_1:-}
-      GROQ_API_KEY_2: ${GROQ_API_KEY_2:-}
-      GROQ_API_KEY_3: ${GROQ_API_KEY_3:-}
-      GROQ_API_KEY_4: ${GROQ_API_KEY_4:-}
-      GROQ_API_KEY_5: ${GROQ_API_KEY_5:-}
-      GROQ_INTENT_MODEL: ${GROQ_INTENT_MODEL:-llama-3.3-70b-versatile}
-      GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
-      QDRANT_URL: ${QDRANT_URL:-}
-      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
-      QDRANT_LOGS_COLLECTION_SUFFIX: ${QDRANT_LOGS_COLLECTION_SUFFIX:-_logs}
-      QDRANT_COMMITS_COLLECTION_SUFFIX: ${QDRANT_COMMITS_COLLECTION_SUFFIX:-_commits}
-      QDRANT_POSTMORTEM_COLLECTION_SUFFIX: ${QDRANT_POSTMORTEM_COLLECTION_SUFFIX:-_postmortem}
-      RESPONSE_TOP_K: ${RESPONSE_TOP_K:-5}
-      RESPONSE_SCORE_THRESHOLD: ${RESPONSE_SCORE_THRESHOLD:-0.0}
       HF_HOME: /app/.cache/huggingface
     volumes:
-      - ./:/app
       - hf_cache:/app/.cache/huggingface
       - ./logs:/app/logs
-    command: >
-      sh -c "pip install --no-cache-dir -r requirements.txt &&
-      python run.py"
 
 volumes:
   hf_cache:

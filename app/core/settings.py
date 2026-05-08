@@ -139,8 +139,6 @@ class Settings(BaseSettings):
             self.GEMINI_KEYS = _collect_numbered_keys("GEMINI_KEY", _ENV)
         if not self.GROQ_API_KEYS:
             self.GROQ_API_KEYS = _collect_numbered_keys("GROQ_API_KEY", _ENV)
-        if not self.JUDGE_GROQ_API_KEYS:
-            self.JUDGE_GROQ_API_KEYS = _collect_numbered_keys("JUDGE_GROQ_API_KEY", _ENV)
 
 
 settings = Settings()
