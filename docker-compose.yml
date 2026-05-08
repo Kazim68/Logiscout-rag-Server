@@ -5,6 +5,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      cache_from:
+        - type=local,src=.docker-buildx-cache
+      cache_to:
+        - type=local,dest=.docker-buildx-cache,mode=max
     image: logiscout-rag-server:latest
     container_name: logiscout-rag-api
     working_dir: /app
@@ -15,10 +19,10 @@ services:
       - .env
     environment:
       PYTHONUNBUFFERED: "1"
-      HF_HOME: /app/.cache/huggingface
+      FASTEMBED_CACHE_PATH: /app/.cache/fastembed
     volumes:
-      - hf_cache:/app/.cache/huggingface
+      - fastembed_cache:/app/.cache/fastembed
       - ./logs:/app/logs
 
 volumes:
-  hf_cache:
+  fastembed_cache:

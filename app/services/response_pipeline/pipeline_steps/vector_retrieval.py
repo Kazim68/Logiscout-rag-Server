@@ -3,11 +3,22 @@
 from __future__ import annotations
 
 import logging
+import math
+import os
 from typing import Any, Callable, Dict, List, Optional
 
 from ..config import ResponsePipelineConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_vector(vector: Any) -> List[float]:
+    """Return a unit-length vector to preserve cosine search behavior."""
+    values = vector.tolist() if hasattr(vector, "tolist") else list(vector)
+    norm = math.sqrt(sum(value * value for value in values))
+    if norm == 0:
+        return values
+    return [value / norm for value in values]
 
 
 class VectorRetrievalStep:
@@ -22,43 +33,23 @@ class VectorRetrievalStep:
         self._qdrant_client_getter = qdrant_client_getter
         self._model = None
 
-    @staticmethod
-    def _resolve_model_path(model_name: str) -> str:
-        """
-        Resolve a local snapshot path for the embedding model.
-
-        This mirrors the ingestion pipeline behavior so retrieval uses the
-        same embedding space as indexed commit documents.
-        """
-        from huggingface_hub import snapshot_download
-        from huggingface_hub.errors import LocalEntryNotFoundError
-
-        try:
-            model_path = snapshot_download(repo_id=model_name, local_files_only=True)
-            logger.info("Embedding model '%s' found in cache; loading offline", model_name)
-            return model_path
-        except LocalEntryNotFoundError:
-            logger.info("Embedding model '%s' not cached; downloading", model_name)
-            return snapshot_download(repo_id=model_name)
-
     def get_embedding_model(self):
-        """Lazily load the sentence-transformer used for query embeddings."""
+        """Lazily load the FastEmbed model used for query embeddings."""
         if self._model is None:
-            from sentence_transformers import SentenceTransformer
+            from fastembed import TextEmbedding
 
-            model_path = self._resolve_model_path(self.config.embedding_model)
-            self._model = SentenceTransformer(model_path)
-            logger.info("Response embedding model loaded from: %s", model_path)
+            cache_dir = os.getenv("FASTEMBED_CACHE_PATH") or None
+            self._model = TextEmbedding(
+                model_name=self.config.embedding_model,
+                cache_dir=cache_dir,
+            )
+            logger.info("Response FastEmbed model loaded: %s", self.config.embedding_model)
         return self._model
 
     def _embed_query(self, text: str) -> List[float]:
         """Embed the user prompt into the same vector space as commit docs."""
-        embedding = self.get_embedding_model().encode(
-            [text],
-            normalize_embeddings=True,
-            batch_size=1,
-        )[0]
-        return embedding.tolist() if hasattr(embedding, "tolist") else list(embedding)
+        embedding = list(self.get_embedding_model().query_embed(query=text))[0]
+        return _normalize_vector(embedding)
 
     def _collection_exists(self, collection_name: str) -> bool:
         """Check whether the target collection exists in Qdrant."""

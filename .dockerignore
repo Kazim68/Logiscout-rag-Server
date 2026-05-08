@@ -21,6 +21,7 @@ htmlcov
 *.log
 logs
 .cache
+.docker-buildx-cache
 .claude
 node_modules
 README.md

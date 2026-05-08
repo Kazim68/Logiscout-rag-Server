@@ -1,6 +1,8 @@
 """Vector Store Service: Embeds commit semantic text and upserts into Qdrant."""
 
 import logging
+import math
+import os
 import uuid
 from typing import List
 
@@ -11,6 +13,15 @@ logger = logging.getLogger(__name__)
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
 
+def _normalize_vector(vector) -> List[float]:
+    """Return a unit-length vector to preserve cosine search behavior."""
+    values = vector.tolist() if hasattr(vector, "tolist") else list(vector)
+    norm = math.sqrt(sum(value * value for value in values))
+    if norm == 0:
+        return values
+    return [value / norm for value in values]
+
+
 class VectorStoreService:
     """Handles embedding generation and Qdrant upsert operations for commits."""
 
@@ -19,40 +30,21 @@ class VectorStoreService:
         self._model = None
         self._client = None
 
-    @staticmethod
-    def _resolve_model_path(model_name: str) -> str:
-        """
-        Resolves a concrete local snapshot path.
-
-        If the model is cached, this stays fully offline. If not, it downloads
-        once for the current run and returns the downloaded snapshot path.
-        """
-        from huggingface_hub import snapshot_download
-        from huggingface_hub.errors import LocalEntryNotFoundError
-
-        try:
-            model_path = snapshot_download(repo_id=model_name, local_files_only=True)
-            logger.info("Model '%s' found in cache; loading offline", model_name)
-            return model_path
-        except LocalEntryNotFoundError:
-            logger.info("Model '%s' not cached; downloading once for this run", model_name)
-            return snapshot_download(repo_id=model_name)
-
     def get_embedding_model(self):
-        """Loads the sentence-transformer model from a local snapshot path."""
+        """Loads the FastEmbed model used for commit embeddings."""
         if self._model is None:
-            from sentence_transformers import SentenceTransformer
+            from fastembed import TextEmbedding
 
-            model_path = self._resolve_model_path(MODEL_NAME)
-            self._model = SentenceTransformer(model_path)
-            logger.info("Embedding model loaded from local path: %s", model_path)
+            cache_dir = os.getenv("FASTEMBED_CACHE_PATH") or None
+            self._model = TextEmbedding(model_name=MODEL_NAME, cache_dir=cache_dir)
+            logger.info("FastEmbed model loaded: %s", MODEL_NAME)
         return self._model
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """Vectorizes a list of semantic text strings."""
         model = self.get_embedding_model()
-        embeddings = model.encode(texts, normalize_embeddings=True, batch_size=64)
-        return [e.tolist() for e in embeddings]
+        embeddings = model.passage_embed(texts, batch_size=64)
+        return [_normalize_vector(embedding) for embedding in embeddings]
 
     def get_qdrant_client(self):
         """Creates and caches a Qdrant client connection."""
