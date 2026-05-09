@@ -53,7 +53,7 @@ class ResponsePipelineConfig:
     gemini_keys: Tuple[str, ...] = field(
         default_factory=lambda: tuple(settings.GEMINI_KEYS)
     )
-    gemini_intent_models: Tuple[str, ...] = ("gemini-2.5-flash",)
+    gemini_intent_models: Tuple[str, ...] = ("gemini-3.1-flash-lite",)
 
     groq_api_keys: Tuple[str, ...] = field(
         default_factory=lambda: tuple(settings.GROQ_API_KEYS)
