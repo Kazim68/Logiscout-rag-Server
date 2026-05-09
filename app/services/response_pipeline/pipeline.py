@@ -18,6 +18,7 @@ Usage:
 
 import json
 import logging
+from datetime import date, datetime
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from .config import ResponsePipelineConfig
@@ -30,6 +31,15 @@ from .pipeline_steps import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class CustomJSONEncoder(json.JSONEncoder):
+    """JSON encoder that serializes datetime/date objects to ISO 8601 strings."""
+
+    def default(self, o: Any) -> Any:
+        if isinstance(o, (datetime, date)):
+            return o.isoformat()
+        return super().default(o)
 
 
 class ResponsePipeline:
@@ -189,7 +199,7 @@ class ResponsePipeline:
     @staticmethod
     def _frame(event: str, data: Dict[str, Any]) -> str:
         """Serialize a single chunk as a newline-delimited JSON event."""
-        return json.dumps({"event": event, "data": data}) + "\n"
+        return json.dumps({"event": event, "data": data}, cls=CustomJSONEncoder) + "\n"
 
     @staticmethod
     def _collect_sources(contexts: Dict[str, Optional[List[Dict[str, Any]]]]) -> List[str]:
